@@ -10,6 +10,8 @@ pip install -r requirements.txt
 
 ## Запуск:
 
+
+
 python main.py
 
 python3 -m venv env
