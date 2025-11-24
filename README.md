@@ -8,9 +8,13 @@ pip install -r requirements.txt
 
 Скопировать config.py.example в config.py и изменить его
 
+## Настройка окружения
+Для работы приложения необходимо создать файл '.env' в корне проекта со следующим содержанием:
+
 ## Запуск:
 
 python main.py
 
 python3 -m venv env
 source env/bin/activate
+
