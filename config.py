@@ -1,1 +1,4 @@
-token = '8471444301:AAF4b_O-InBLlOjhZdmU_ugajFSXmlaKjaw'
+import os
+
+token = os.getenv('token')
+
