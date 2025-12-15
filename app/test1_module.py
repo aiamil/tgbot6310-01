@@ -316,7 +316,6 @@ def get_series_recommendation(language, genre, mood, duration):
               "Приятного просмотра! ❤️"
 }
 
-
 def show_final_result(bot, call):
     """
     Показываем финальный результат С ФОТО
@@ -337,6 +336,89 @@ def show_final_result(bot, call):
     # Определяем сериал по комбинации ответов
     series_result = get_series_recommendation(language, genre, mood, duration)
     
+    # ⭐ ВАЖНО: Не изменяем старое сообщение, а отправляем новое!
+    try:
+        # Просто убираем "часики" на кнопке
+        bot.answer_callback_query(call.id, text="🎬 Найден идеальный сериал!")
+    except:
+        pass
+
+    bot.send_message(
+        user_id,
+        "✅ Все ответы получены! Ищем идеальный сериал для вас...",
+        parse_mode="Markdown"
+    )
+    
+    # Путь к фото
+    photo_path = f"photos/{series_result['photo_name']}"
+    
+    # Проверяем, существует ли фото
+    if os.path.exists(photo_path):
+        try:
+            # Отправляем фото с описанием
+            with open(photo_path, 'rb') as photo:
+                bot.send_photo(
+                    user_id,
+                    photo,
+                    caption=series_result['caption'],
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            # Если ошибка при отправке фото, отправляем только текст
+            print(f"Ошибка при отправке фото: {e}")
+            bot.send_message(
+                user_id,
+                series_result['caption'],
+                parse_mode="Markdown"
+            )
+    else:
+        # Если фото нет, отправляем только текст
+        bot.send_message(
+            user_id,
+            series_result['caption'],
+            parse_mode="Markdown"
+        )
+        # Дополнительное сообщение об ошибке
+        bot.send_message(
+            user_id,
+            f"⚠ *Фото не найдено*\n"
+            f"Добавьте файл `{series_result['photo_name']}` в папку `photos/`",
+            parse_mode="Markdown"
+        )
+    
+    # Очищаем ответы пользователя (опционально)
+    if user_id in user_answers:
+        del user_answers[user_id]
+
+    """
+    Показываем финальный результат С ФОТО
+    """
+    user_id = call.message.chat.id
+    duration = call.data.split("_")[1]
+    
+    # Сохраняем ответ пользователя
+    if user_id in user_answers:
+        user_answers[user_id]["duration"] = duration
+    
+    # Получаем все ответы пользователя
+    answers = user_answers.get(user_id, {})
+    language = answers.get("language", "")
+    genre = answers.get("genre", "")
+    mood = answers.get("mood", "")
+    
+    # Определяем сериал по комбинации ответов
+    series_result = get_series_recommendation(language, genre, mood, duration)
+    from db import db  # ← Строка 1: импорт БД
+    db.save_test(user_id, "Тест по сериалам", series_result['caption'].split('\n')[1].replace('*', '')[:50])  # ← Строка 2: сохранение
+    
+    # Обновляем сообщение
+    bot.edit_message_text(
+        chat_id=user_id,
+        message_id=call.message.message_id,
+        text="✅ Все ответы получены! Ищем идеальный сериал для вас...",
+        parse_mode="Markdown"
+    )
+
     # Обновляем сообщение
     bot.edit_message_text(
         chat_id=user_id,
