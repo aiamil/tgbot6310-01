@@ -6,6 +6,7 @@ import sqlite3
 # Добавляем папку app в путь Python
 sys.path.insert(0, 'app')
 
+
 # Теперь можно импортировать из app
 from db import Database
 
