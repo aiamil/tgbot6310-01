@@ -333,12 +333,11 @@ def show_final_result(bot, call):
     genre = answers.get("genre", "")
     mood = answers.get("mood", "")
     
-    # Определяем сериал по комбинации ответов
+
     series_result = get_series_recommendation(language, genre, mood, duration)
     
-    # ⭐ ВАЖНО: Не изменяем старое сообщение, а отправляем новое!
     try:
-        # Просто убираем "часики" на кнопке
+       
         bot.answer_callback_query(call.id, text="🎬 Найден идеальный сериал!")
     except:
         pass
@@ -352,7 +351,7 @@ def show_final_result(bot, call):
     # Путь к фото
     photo_path = f"photos/{series_result['photo_name']}"
     
-    # Проверяем, существует ли фото
+  
     if os.path.exists(photo_path):
         try:
             # Отправляем фото с описанием
