@@ -44,7 +44,7 @@ try:
     if tests:
         print(f"Найдено тестов: {len(tests)}")
         for test in tests:
-            print(f"ID теста: {test[0]}, ID юзера: {test[1]}, Тест: {test[2]}, Результат: {test[3]}")
+            print(f"ID теста: {test[0]}, ID юзера: {test[1]}, Тест: {test[2]}")
     else:
         print("Нет тестов")
     
