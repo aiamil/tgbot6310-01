@@ -1,6 +1,6 @@
 from telebot import types
 import os 
-# Храним ответы пользователя
+
 user_answers = {}
 
 def start_serials_test(bot, message):
