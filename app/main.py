@@ -63,26 +63,57 @@ def handle_stats(message):
     
     try:
         from db import db
-        # Получаем статистику из БД
+        
+        # Получаем статистику
         stats = db.get_user_stats(user_id)
         
+        # Формируем текст сообщения
         text = f"""
 📊 *Ваша статистика:*
 
 👤 Имя: {message.from_user.first_name}
 🆔 ID: {user_id}
-📋 Всего тестов: {stats['test_count']}
+📋 Всего тестов: {stats.get('test_count', 0)}
+🎯 Тестов викторин: {stats.get('test3_count', 0)}
         """
         
-        # Если есть последний тест
-        if stats['last_test']:
-            test_name, result, date = stats['last_test']
-            text += f"\n🎬 Последний тест:\n  - {test_name}\n  - Результат: {result}\n  - Дата: {date[:10]}"
+        # Проверяем наличие последнего теста
+        last_test = stats.get('last_test')
+        if last_test:
+            test_name = last_test.get('test_name', 'Неизвестный тест')
+            result = last_test.get('result', 'Нет результата')
+            created_at = last_test.get('created_at', 'Неизвестная дата')
+            
+            # Обрезаем длинный результат
+            if len(str(result)) > 50:
+                result = str(result)[:50] + "..."
+            
+            text += f"\n🎬 *Последний тест:*\n├ Тест: {test_name}\n├ Результат: {result}\n└ Дата: {created_at[:10] if created_at else 'Неизвестно'}"
+        
+        # Если есть результаты теста 3
+        test3_results = stats.get('test3_results', [])
+        if test3_results:
+            text += f"\n\n🎯 *Последние викторины:*"
+            for i, test in enumerate(test3_results[:3], 1):  # Показываем последние 3
+                correct = test.get('correct_count', 0)
+                total = test.get('total_questions', 0)
+                percent = test.get('percentage', 0)
+                date = test.get('created_at', '')[:10] if test.get('created_at') else ''
+                
+                text += f"\n{i}. {correct}/{total} правильных ({percent}%) - {date}"
+        
+        # Если у пользователя нет тестов
+        if stats.get('test_count', 0) == 0 and stats.get('test3_count', 0) == 0:
+            text += "\n\nℹ️ Вы еще не проходили тесты. Выберите тест из меню!"
         
         bot.send_message(message.chat.id, text, parse_mode="Markdown")
+        
     except Exception as e:
         print(f"Ошибка при получении статистики: {e}")
-        bot.send_message(message.chat.id, "⚠️ Не удалось получить статистику.")
+        bot.send_message(
+            message.chat.id, 
+            f"⚠️ Не удалось получить статистику. Ошибка: {str(e)[:100]}\nПопробуйте позже или пройдите тест сначала."
+        )
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
@@ -141,6 +172,27 @@ def handle_callback(call):
     
     # Убираем "часики" на кнопке
     bot.answer_callback_query(call.id)
+
+@bot.message_handler(func=lambda message: True)
+def handle_other_messages(message):
+    """Обработка всех остальных сообщений"""
+    # Если пользователь отправил что-то кроме кнопок
+    if message.text not in ["Тест 1: Какой сериал вам подходит?", 
+                           "Тест 2: Проверка знаний фильмов 🎥", 
+                           "📊 Моя статистика"]:
+        
+        # Показываем меню
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        btn1 = types.KeyboardButton("Тест 1: Какой сериал вам подходит?")
+        btn2 = types.KeyboardButton("Тест 2: Проверка знаний фильмов 🎥")
+        btn3 = types.KeyboardButton("📊 Моя статистика")
+        markup.add(btn1, btn2, btn3)
+        
+        bot.send_message(
+            message.chat.id,
+            f"Пожалуйста, выберите один из вариантов меню:",
+            reply_markup=markup
+        )
 
 if __name__ == '__main__':
     print("🤖 Бот запущен...")

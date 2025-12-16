@@ -1,4 +1,17 @@
 from telebot import types
+import logging
+
+try:
+    from db import db
+    DB_AVAILABLE = True
+except ImportError as e:
+    logging.error(f"Не удалось импортировать модуль db: {e}")
+    DB_AVAILABLE = False
+except Exception as e:
+    logging.error(f"Ошибка при импорте db: {e}")
+    DB_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 # Вопросы и варианты ответов для теста про фильмы
 FILM_QUESTIONS = [
@@ -10,7 +23,9 @@ FILM_QUESTIONS = [
             ('Бен-Гур', 'film_step1_benhur'),
             ('Ла-Ла Ленд', 'film_step1_lalaland')
         ],
-        'correct': 'film_step1_lotr'
+        'correct': 'film_step1_lotr',
+        'explanation': '✅ Правильно! "Властелин колец: Возвращение короля" получил 11 Оскаров.',
+        'correct_answer': 'Властелин колец: Возвращение короля'
     },
     {
         'question': '🎬 **Вопрос 2/4:**\nКто режиссер фильма "Криминальное чтиво"?',
@@ -20,7 +35,9 @@ FILM_QUESTIONS = [
             ('Стивен Спилберг', 'film_step2_spielberg'),
             ('Дэвид Финчер', 'film_step2_fincher')
         ],
-        'correct': 'film_step2_tarantino'
+        'correct': 'film_step2_tarantino',
+        'explanation': '✅ Верно! Режиссер - Квентин Тарантино, фильм вышел в 1994 году.',
+        'correct_answer': 'Квентин Тарантино'
     },
     {
         'question': '🎬 **Вопрос 3/4:**\nВ каком году вышел фильм "Матрица"?',
@@ -30,7 +47,9 @@ FILM_QUESTIONS = [
             ('2000', 'film_step3_2000'),
             ('2001', 'film_step3_2001')
         ],
-        'correct': 'film_step3_1999'
+        'correct': 'film_step3_1999',
+        'explanation': '✅ Точно! "Матрица" братьев Вачовски вышла в 1999 году.',
+        'correct_answer': '1999'
     },
     {
         'question': '🎬 **Вопрос 4/4:**\nКакой актер сыграл Тони Старка в фильмах Marvel?',
@@ -40,7 +59,9 @@ FILM_QUESTIONS = [
             ('Крис Хемсворт', 'film_step4_hemsworth'),
             ('Марк Руффало', 'film_step4_ruffalo')
         ],
-        'correct': 'film_step4_downey'
+        'correct': 'film_step4_downey',
+        'explanation': '✅ Правильно! Роберт Дауни-младший сыграл Железного человека.',
+        'correct_answer': 'Роберт Дауни-младший'
     }
 ]
 
@@ -51,162 +72,223 @@ def start_films_test(bot, message):
     """Начало теста про фильмы"""
     user_id = message.from_user.id
     
-    # Создаем запись о начале теста в БД
+    logger.info(f"Начат тест по фильмам для пользователя {user_id}")
+    
+    # Инициализируем результаты для пользователя
+    temp_results[user_id] = {
+        'answers': [],  # список ответов (0/1)
+        'user_choices': [],  # список выбранных вариантов
+        'answer_texts': [],  # текст выбранных ответов
+        'test_id': None
+    }
+    
+    # Создаем запись о тесте в БД
     try:
         from db import db
-        db.start_test(user_id, test_name="Тест знаний фильмов")
-        temp_results[user_id] = [0, 0, 0, 0]
+        test_id = db.start_test(user_id, "Тест знаний фильмов")
+        temp_results[user_id]['test_id'] = test_id
     except Exception as e:
-        print(f"Ошибка при сохранении в БД: {e}")
-        temp_results[user_id] = [0, 0, 0, 0]
+        logger.error(f"Ошибка при создании теста в БД: {e}")
     
     # Отправляем первый вопрос
-    film_step1_question(bot, message)
+    send_question(bot, message.chat.id, 0)
+
+def send_question(bot, chat_id, question_index):
+    """Универсальная функция для отправки вопроса"""
+    question_data = FILM_QUESTIONS[question_index]
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    # Создаем кнопки с вариантами ответов
+    buttons = []
+    for text, callback_data in question_data['answers']:
+        buttons.append(types.InlineKeyboardButton(text, callback_data=callback_data))
+    
+    # Распределяем кнопки по 2 в ряд
+    for i in range(0, len(buttons), 2):
+        if i + 1 < len(buttons):
+            markup.add(buttons[i], buttons[i + 1])
+        else:
+            markup.add(buttons[i])
+    
+    bot.send_message(chat_id, question_data['question'], 
+                     reply_markup=markup, parse_mode="Markdown")
+
+def process_answer(bot, call, current_step):
+    """Обработка ответа пользователя"""
+    user_id = call.from_user.id
+    
+    # Получаем текст выбранного ответа
+    question_data = FILM_QUESTIONS[current_step]
+    answer_text = None
+    for text, callback_data in question_data['answers']:
+        if callback_data == call.data:
+            answer_text = text
+            break
+    
+    # Проверяем правильность ответа
+    is_correct = 1 if call.data == question_data['correct'] else 0
+    
+    # Сохраняем результат
+    if user_id not in temp_results:
+        temp_results[user_id] = {
+            'answers': [], 
+            'user_choices': [],
+            'answer_texts': [],
+            'test_id': None
+        }
+    
+    temp_results[user_id]['answers'].append(is_correct)
+    temp_results[user_id]['user_choices'].append(call.data)
+    temp_results[user_id]['answer_texts'].append(answer_text)
+    
+    # Сохраняем детальный ответ в БД
+    if temp_results[user_id]['test_id']:
+        try:
+            from db import db
+            db.save_test_answers(
+                test_id=temp_results[user_id]['test_id'],
+                question_num=current_step + 1,
+                is_correct=is_correct,
+                answer_text=answer_text,
+                correct_answer=question_data['correct_answer']
+            )
+        except Exception as e:
+            logger.error(f"Ошибка сохранения ответа в БД: {e}")
+    
+    # Отправляем быструю обратную связь
+    feedback_text = "✅ Верно!" if is_correct else "❌ Неверно!"
+    bot.answer_callback_query(
+        call.id,
+        text=feedback_text,
+        show_alert=False
+    )
+    
+    # Если это последний вопрос, показываем результат
+    if current_step == len(FILM_QUESTIONS) - 1:
+        show_film_final_result(bot, call)
+    else:
+        # Иначе показываем следующий вопрос
+        show_next_question(bot, call, current_step)
+
+def show_next_question(bot, call, current_step):
+    """Показывает следующий вопрос"""
+    next_step = current_step + 1
+    question_data = FILM_QUESTIONS[next_step]
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    buttons = []
+    for text, callback_data in question_data['answers']:
+        buttons.append(types.InlineKeyboardButton(text, callback_data=callback_data))
+    
+    for i in range(0, len(buttons), 2):
+        if i + 1 < len(buttons):
+            markup.add(buttons[i], buttons[i + 1])
+        else:
+            markup.add(buttons[i])
+    
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=question_data['question'],
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
 
 def film_step1_question(bot, message):
     """Первый вопрос теста"""
-    question_data = FILM_QUESTIONS[0]
-    markup = types.InlineKeyboardMarkup()
-    
-    for text, callback_data in question_data['answers']:
-        markup.add(types.InlineKeyboardButton(text, callback_data=callback_data))
-    
-    bot.send_message(message.chat.id, question_data['question'], 
-                     reply_markup=markup, parse_mode="Markdown")
+    send_question(bot, message.chat.id, 0)
 
 def film_step2_question(bot, call):
     """Второй вопрос теста"""
-    user_id = call.from_user.id
-    is_correct = 1 if call.data == FILM_QUESTIONS[0]['correct'] else 0
-    
-    # Сохраняем результат
-    if user_id in temp_results:
-        temp_results[user_id][0] = is_correct
-    
-    question_data = FILM_QUESTIONS[1]
-    markup = types.InlineKeyboardMarkup()
-    
-    for text, callback_data in question_data['answers']:
-        markup.add(types.InlineKeyboardButton(text, callback_data=callback_data))
-    
-    bot.edit_message_text(
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        text=question_data['question'],
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
+    process_answer(bot, call, 0)
 
 def film_step3_question(bot, call):
     """Третий вопрос теста"""
-    user_id = call.from_user.id
-    is_correct = 1 if call.data == FILM_QUESTIONS[1]['correct'] else 0
-    
-    # Сохраняем результат
-    if user_id in temp_results:
-        temp_results[user_id][1] = is_correct
-    
-    question_data = FILM_QUESTIONS[2]
-    markup = types.InlineKeyboardMarkup()
-    
-    for text, callback_data in question_data['answers']:
-        markup.add(types.InlineKeyboardButton(text, callback_data=callback_data))
-    
-    bot.edit_message_text(
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        text=question_data['question'],
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
+    process_answer(bot, call, 1)
 
 def film_step4_question(bot, call):
     """Четвертый вопрос теста"""
-    user_id = call.from_user.id
-    is_correct = 1 if call.data == FILM_QUESTIONS[2]['correct'] else 0
-    
-    # Сохраняем результат
-    if user_id in temp_results:
-        temp_results[user_id][2] = is_correct
-    
-    question_data = FILM_QUESTIONS[3]
-    markup = types.InlineKeyboardMarkup()
-    
-    for text, callback_data in question_data['answers']:
-        markup.add(types.InlineKeyboardButton(text, callback_data=callback_data))
-    
-    bot.edit_message_text(
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        text=question_data['question'],
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
+    process_answer(bot, call, 2)
 
 def show_film_final_result(bot, call):
     """Показываем финальный результат теста"""
     user_id = call.from_user.id
     
-    # Сохраняем последний ответ
-    is_correct = 1 if call.data == FILM_QUESTIONS[3]['correct'] else 0
+    # Получаем текст последнего ответа
+    question_data = FILM_QUESTIONS[3]
+    answer_text = None
+    for text, callback_data in question_data['answers']:
+        if callback_data == call.data:
+            answer_text = text
+            break
     
-    # Сохраняем результат
+    # Проверяем правильность последнего ответа
+    is_correct = 1 if call.data == question_data['correct'] else 0
+    
     if user_id in temp_results:
-        temp_results[user_id][3] = is_correct
-        results = temp_results[user_id]
+        temp_results[user_id]['answers'].append(is_correct)
+        temp_results[user_id]['user_choices'].append(call.data)
+        temp_results[user_id]['answer_texts'].append(answer_text)
+        results = temp_results[user_id]['answers']
+        test_id = temp_results[user_id]['test_id']
+        
+        # Сохраняем последний ответ в БД
+        if test_id:
+            try:
+                from db import db
+                db.save_test_answers(
+                    test_id=test_id,
+                    question_num=4,
+                    is_correct=is_correct,
+                    answer_text=answer_text,
+                    correct_answer=question_data['correct_answer']
+                )
+            except Exception as e:
+                logger.error(f"Ошибка сохранения последнего ответа: {e}")
     else:
         results = [0, 0, 0, 0]
+        test_id = None
     
-    total_questions = 4
+    total_questions = len(FILM_QUESTIONS)
     correct_answers = sum(results)
+    percentage = int((correct_answers / total_questions) * 100)
     
     # Определяем уровень знаний
-    if correct_answers == total_questions:
-        level = "🎬 КиноГУРУ! 🏆"
-        description = "Вы настоящий знаток кино! Ваши знания впечатляют!"
-    elif correct_answers >= total_questions * 0.75:  # 3 из 4
-        level = "🎬 Киноман 🍿"
-        description = "Отличные знания! Вы хорошо разбираетесь в фильмах."
-    elif correct_answers >= total_questions * 0.5:  # 2 из 4
-        level = "🎬 Зритель со стажем 🎥"
-        description = "Неплохой результат! Есть что вспомнить и узнать."
-    else:
-        level = "🎬 Начинающий зритель 📺"
-        description = "Есть куда расти! Смотрите больше классических фильмов."
+    level_data = get_level(correct_answers, total_questions)
     
     # Сохраняем результат теста в БД
     try:
         from db import db
-        db.finish_test(user_id, result=level)
+        # Сохраняем в совместимую таблицу
+        db.save_film_test_result(user_id, correct_answers, total_questions, percentage)
+        
+        # Обновляем основной тест если есть test_id
+        if test_id:
+            result_text = f"{level_data['level']}: {correct_answers}/{total_questions}"
+            # Обновляем запись теста
+            conn = db._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE tests 
+                SET result = ?, score = ?, total_questions = ?
+                WHERE id = ?
+            ''', (result_text, correct_answers, total_questions, test_id))
+            conn.commit()
+            conn.close()
+            
+        logger.info(f"Тест завершен для пользователя {user_id}: {correct_answers}/{total_questions}")
     except Exception as e:
-        print(f"Ошибка сохранения в БД: {e}")
+        logger.error(f"Ошибка сохранения в БД: {e}")
     
-    # Удаляем временные данные
-    if user_id in temp_results:
-        del temp_results[user_id]
+    # Создаем текст результата
+    result_text = create_result_text(user_id, results, correct_answers, total_questions, percentage, level_data)
     
-    # Создаем результат
-    result_text = f"""
-📊 **Результат теста "Проверка знаний фильмов"**
-
-✅ Правильных ответов: **{correct_answers}/{total_questions}**
-
-🏆 **Ваш уровень:** {level}
-
-📝 {description}
-
-🔍 **Ваши ответы:**
-1. {'✅ Верно' if results[0] else '❌ Неверно'}
-2. {'✅ Верно' if results[1] else '❌ Неверно'}
-3. {'✅ Верно' if results[2] else '❌ Неверно'}
-4. {'✅ Верно' if results[3] else '❌ Неверно'}
-
-Хотите пройти еще раз или попробовать другой тест?
-    """
-    
-    # Кнопка для возврата в меню
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Вернуться в меню", callback_data="back_to_menu"))
+    # Кнопки для действий после теста
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu"))
+    markup.add(types.InlineKeyboardButton("🔄 Пройти еще раз", callback_data="retry_film_test"))
+    markup.add(types.InlineKeyboardButton("📊 История тестов", callback_data="film_test_history"))
+    markup.add(types.InlineKeyboardButton("📈 Моя статистика", callback_data="show_stats"))
     
     bot.edit_message_text(
         chat_id=call.message.chat.id,
@@ -215,3 +297,109 @@ def show_film_final_result(bot, call):
         reply_markup=markup,
         parse_mode="Markdown"
     )
+    
+    # Очищаем временные данные
+    if user_id in temp_results:
+        del temp_results[user_id]
+
+def get_level(correct_answers, total_questions):
+    """Определяет уровень знаний пользователя"""
+    percentage = (correct_answers / total_questions) * 100
+    
+    if percentage == 100:
+        return {
+            'level': "КиноГУРУ",
+            'description': "Вы настоящий знаток кино! Ваши знания впечатляют.",
+            'emoji': "🏆",
+            'stars': "⭐⭐⭐⭐⭐"
+        }
+    elif percentage >= 75:
+        return {
+            'level': "Киноман",
+            'description': "Отличные знания! Вы хорошо разбираетесь в фильмах.",
+            'emoji': "🍿",
+            'stars': "⭐⭐⭐⭐"
+        }
+    elif percentage >= 50:
+        return {
+            'level': "Зритель со стажем",
+            'description': "Неплохой результат! Есть что вспомнить и узнать.",
+            'emoji': "🎥",
+            'stars': "⭐⭐⭐"
+        }
+    else:
+        return {
+            'level': "Начинающий зритель",
+            'description': "Есть куда расти! Смотрите больше классических фильмов.",
+            'emoji': "📺",
+            'stars': "⭐⭐"
+        }
+
+def create_result_text(user_id, results, correct_answers, total_questions, percentage, level_data):
+    """Создает текст с результатами теста"""
+    result_lines = [
+        f"🎬 *РЕЗУЛЬТАТ ТЕСТА ПО ФИЛЬМАМ*",
+        f"",
+        f"📊 *Статистика:*",
+        f"   ✅ Правильно: **{correct_answers}/{total_questions}**",
+        f"   📈 Процент: **{percentage}%**",
+        f"",
+        f"{level_data['emoji']} *Ваш уровень:* **{level_data['level']}**",
+        f"{level_data['stars']}",
+        f"",
+        f"📝 *{level_data['description']}*",
+        f"",
+        f"🔍 *Подробные ответы:*"
+    ]
+    
+    # Добавляем информацию по каждому вопросу
+    for i, (is_correct, question) in enumerate(zip(results, FILM_QUESTIONS), 1):
+        emoji = "✅" if is_correct else "❌"
+        explanation = question['explanation'].replace('✅ ', '').replace('❌ ', '')
+        result_lines.append(f"{i}. {emoji} {explanation}")
+    
+    result_lines.extend([
+        f"",
+        f"---",
+        f"",
+        f"*Что дальше?*"
+    ])
+    
+    return "\n".join(result_lines)
+
+def show_film_test_history(bot, call):
+    """Показывает историю тестов пользователя по фильмам"""
+    user_id = call.from_user.id
+    
+    try:
+        from db import db
+        history = db.get_film_test_history(user_id, limit=5)
+        
+        if not history:
+            text = "📊 *История тестов по фильмам*\n\nУ вас пока нет завершенных тестов."
+        else:
+            text = "📊 *История ваших тестов по фильмам:*\n\n"
+            for i, (correct, total, percentage, date) in enumerate(history, 1):
+                # Форматируем дату
+                date_str = date[:16] if len(date) > 10 else date
+                text += f"*Тест #{i}* ({date_str}):\n"
+                text += f"  ✅ {correct}/{total} ({percentage}%)\n\n"
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu"))
+        markup.add(types.InlineKeyboardButton("🎬 Новый тест", callback_data="retry_film_test"))
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при показе истории: {e}")
+        bot.answer_callback_query(call.id, text="Ошибка при получении истории", show_alert=True)
+
+def retry_film_test(bot, call):
+    """Повторное прохождение теста по фильмам"""
+    start_films_test(bot, call.message)

@@ -219,6 +219,12 @@ def get_series_recommendation(language, genre, mood, duration):
     }
 
 def show_final_result(bot, call):
+    try:
+       from db import db
+       series_title = series_result['caption'].split('\n')[1].replace('**', '').strip()
+       db.save_test(user_id, "Тест по сериалам", series_title)
+    except Exception as e:
+       print(f"Ошибка сохранения в БД: {e}")
     """
     Показываем финальный результат С ФОТО
     """
