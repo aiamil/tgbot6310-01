@@ -13,9 +13,16 @@ pip install -r requirements.txt
 ## Запуск:
 
 python main.py
-export token="8471444301:AAHnebk91k3ACMUEt31nyD4NiQKLGDy4in4"
+export token=""
 python3 -m venv env
 source env/bin/activate
+
+1. Добавляем токен в .env:
+echo 'token="YOUR_BOT_TOKEN"' > .env
+2. Запуск бота локально:
+python app/main.py
+3. Просмотр локальной бд
+python check_db.py
 
 ## ✨ Возможности
 
@@ -79,3 +86,6 @@ serials_bot/
 ├── ippirogova.jpg
 ├── slovo.jpg
 └── landishi.jpg
+
+
+
