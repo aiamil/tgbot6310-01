@@ -1,6 +1,4 @@
-import telebot
 from telebot import types
-from db import db
 
 # Вопросы и варианты ответов для теста про фильмы
 FILM_QUESTIONS = [
@@ -46,12 +44,21 @@ FILM_QUESTIONS = [
     }
 ]
 
+# Словарь для временного хранения результатов
+temp_results = {}
+
 def start_films_test(bot, message):
     """Начало теста про фильмы"""
     user_id = message.from_user.id
     
     # Создаем запись о начале теста в БД
-    db.start_test(user_id, test_name="Тест знаний фильмов")
+    try:
+        from db import db
+        db.start_test(user_id, test_name="Тест знаний фильмов")
+        temp_results[user_id] = [0, 0, 0, 0]
+    except Exception as e:
+        print(f"Ошибка при сохранении в БД: {e}")
+        temp_results[user_id] = [0, 0, 0, 0]
     
     # Отправляем первый вопрос
     film_step1_question(bot, message)
@@ -69,10 +76,12 @@ def film_step1_question(bot, message):
 
 def film_step2_question(bot, call):
     """Второй вопрос теста"""
-    # Сохраняем ответ на предыдущий вопрос
     user_id = call.from_user.id
     is_correct = 1 if call.data == FILM_QUESTIONS[0]['correct'] else 0
-    db.save_answer(user_id, question_num=1, is_correct=is_correct)
+    
+    # Сохраняем результат
+    if user_id in temp_results:
+        temp_results[user_id][0] = is_correct
     
     question_data = FILM_QUESTIONS[1]
     markup = types.InlineKeyboardMarkup()
@@ -90,10 +99,12 @@ def film_step2_question(bot, call):
 
 def film_step3_question(bot, call):
     """Третий вопрос теста"""
-    # Сохраняем ответ на предыдущий вопрос
     user_id = call.from_user.id
     is_correct = 1 if call.data == FILM_QUESTIONS[1]['correct'] else 0
-    db.save_answer(user_id, question_num=2, is_correct=is_correct)
+    
+    # Сохраняем результат
+    if user_id in temp_results:
+        temp_results[user_id][1] = is_correct
     
     question_data = FILM_QUESTIONS[2]
     markup = types.InlineKeyboardMarkup()
@@ -111,10 +122,12 @@ def film_step3_question(bot, call):
 
 def film_step4_question(bot, call):
     """Четвертый вопрос теста"""
-    # Сохраняем ответ на предыдущий вопрос
     user_id = call.from_user.id
     is_correct = 1 if call.data == FILM_QUESTIONS[2]['correct'] else 0
-    db.save_answer(user_id, question_num=3, is_correct=is_correct)
+    
+    # Сохраняем результат
+    if user_id in temp_results:
+        temp_results[user_id][2] = is_correct
     
     question_data = FILM_QUESTIONS[3]
     markup = types.InlineKeyboardMarkup()
@@ -136,10 +149,14 @@ def show_film_final_result(bot, call):
     
     # Сохраняем последний ответ
     is_correct = 1 if call.data == FILM_QUESTIONS[3]['correct'] else 0
-    db.save_answer(user_id, question_num=4, is_correct=is_correct)
     
-    # Получаем результаты из БД
-    results = db.get_test_results(user_id)
+    # Сохраняем результат
+    if user_id in temp_results:
+        temp_results[user_id][3] = is_correct
+        results = temp_results[user_id]
+    else:
+        results = [0, 0, 0, 0]
+    
     total_questions = 4
     correct_answers = sum(results)
     
@@ -158,9 +175,17 @@ def show_film_final_result(bot, call):
         description = "Есть куда расти! Смотрите больше классических фильмов."
     
     # Сохраняем результат теста в БД
-    db.finish_test(user_id, result=level)
+    try:
+        from db import db
+        db.finish_test(user_id, result=level)
+    except Exception as e:
+        print(f"Ошибка сохранения в БД: {e}")
     
-    # Создаем результат в виде графика
+    # Удаляем временные данные
+    if user_id in temp_results:
+        del temp_results[user_id]
+    
+    # Создаем результат
     result_text = f"""
 📊 **Результат теста "Проверка знаний фильмов"**
 
